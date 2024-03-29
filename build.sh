@@ -1,0 +1,1 @@
+clang -e DllMain -DDEBUG --target=x86_64-windows-gnu -march=x86-64 -m64 -w -shared -I /usr/share/mingw-w64/include main.c -o mscorsvc.dll

